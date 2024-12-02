@@ -75,7 +75,8 @@ local collection_meta =	{
 
 local function dispatch_reply(so)
 	local len_reply	= so:read(4)
-	local reply	= so:read(driver.length(len_reply))
+	local len = driver.length(len_reply)
+	local reply	= so:read(len)
 	local result = {}
 	local succ,	reply_id, document = driver.reply(reply)
 	result.document	= document
@@ -104,26 +105,30 @@ local function mongo_auth(mongoc)
 		if user	~= nil and pass	~= nil then
 			-- autmod can be "mongodb_cr" or "scram_sha1"
 			local auth_func = auth_method[authmod]
-			assert(auth_func , "Invalid authmod")
+			assert(auth_func, "Invalid authmod")
 			assert(auth_func(authdb or mongoc, user, pass))
 		end
 		local rs_data =	mongoc:runCommand("ismaster")
 		if rs_data.ok == 1 then
+			local backup = {}
 			if rs_data.hosts then
-				local backup = {}
 				for	_, v in	ipairs(rs_data.hosts) do
 					local host,	port = __parse_addr(v)
+					-- print("rs_data.host ==========", v, host)
 					table.insert(backup, {host = host, port	= port})
 				end
 				mongoc.__sock:changebackup(backup)
 			end
+			-- print("rs_data.ismaster -->", rs_data.ismaster)
+			-- print("rs_data.primary --->", rs_data.primary)
 			if rs_data.ismaster	then
-				return
+				return rs_data.ismaster
 			elseif rs_data.primary then
 				local host,	port = __parse_addr(rs_data.primary)
 				mongoc.host	= host
 				mongoc.port	= port
 				mongoc.__sock:changehost(host, port)
+				return rs_data.ismaster
 			else
 				-- socketchannel would try the next host in backup list
 				error ("No primary return : " .. tostring(rs_data.me))
@@ -157,6 +162,9 @@ function mongo.client( conf	)
 		backup = backup,
 		nodelay = true,
 		overload = conf.overload,
+		tls = conf.tls,
+		tlsClientCert = conf.tlsClientCert,
+		tlsClientKey = conf.tlsClientKey,
 	}
 	setmetatable(obj, client_meta)
 	obj.__sock:connect(true)	-- try connect only	once
@@ -305,9 +313,9 @@ function mongo_db:runCommand(cmd,cmd_v,...)
 	local bson_cmd
 	if not cmd_v then
 		-- ensure cmd remains in first place
-		bson_cmd = bson_encode_order(cmd,1, "$db", self.name)
+		bson_cmd = bson_encode_order(cmd, 1, "$db", self.name)
 	else
-		bson_cmd = bson_encode_order(cmd,cmd_v, "$db", self.name, ...)
+		bson_cmd = bson_encode_order(cmd, cmd_v, "$db", self.name, ...)
 	end
 
 	local pack = driver.op_msg(request_id, 0, bson_cmd)

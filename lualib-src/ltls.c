@@ -291,13 +291,13 @@ static int
 _lctx_cert(lua_State* L) {
     struct ssl_ctx* ctx_p = _check_sslctx(L, 1);
     const char* certfile = lua_tostring(L, 2);
-    const char* key = lua_tostring(L, 3);
+    const char* keyfile = lua_tostring(L, 3);
     if(!certfile) {
         luaL_error(L, "need certfile");
     }
 
-    if(!key) {
-        luaL_error(L, "need private key");
+    if(!keyfile) {
+        luaL_error(L, "need private keyfile");
     }
 
     int ret = SSL_CTX_use_certificate_chain_file(ctx_p->ctx, certfile);
@@ -305,7 +305,38 @@ _lctx_cert(lua_State* L) {
         luaL_error(L, "SSL_CTX_use_certificate_chain_file error:%d", ret);
     }
 
-    ret = SSL_CTX_use_PrivateKey_file(ctx_p->ctx, key, SSL_FILETYPE_PEM);
+    ret = SSL_CTX_use_PrivateKey_file(ctx_p->ctx, keyfile, SSL_FILETYPE_PEM);
+    if(ret != 1) {
+        luaL_error(L, "SSL_CTX_use_PrivateKey_file error:%d", ret);
+    }
+    ret = SSL_CTX_check_private_key(ctx_p->ctx);
+    if(ret != 1) {
+        luaL_error(L, "SSL_CTX_check_private_key error:%d", ret);
+    }
+    return 0;
+}
+
+static int
+_lctx_client_cert(lua_State* L) {
+    struct ssl_ctx* ctx_p = _check_sslctx(L, 1);
+    const char* certfile = lua_tostring(L, 2);
+    const char* keyfile = lua_tostring(L, 3);
+
+    if(!certfile) {
+        luaL_error(L, "need certfile");
+    }
+
+    if(!keyfile) {
+        luaL_error(L, "need private keyfile");
+    }
+
+    int ret = 1;
+    ret = SSL_CTX_use_certificate_file(ctx_p->ctx, certfile, SSL_FILETYPE_PEM);
+    if(ret != 1) {
+        luaL_error(L, "SSL_CTX_use_certificate_file error:%d", ret);
+    }
+
+    ret = SSL_CTX_use_PrivateKey_file(ctx_p->ctx, keyfile, SSL_FILETYPE_PEM);
     if(ret != 1) {
         luaL_error(L, "SSL_CTX_use_PrivateKey_file error:%d", ret);
     }
@@ -346,6 +377,7 @@ lnew_ctx(lua_State* L) {
         luaL_Reg l[] = {
             {"set_ciphers", _lctx_ciphers},
             {"set_cert", _lctx_cert},
+            {"set_client_cert", _lctx_client_cert},
             {NULL, NULL},
         };
 

@@ -6,7 +6,9 @@ local error = error
 local tostring = tostring
 
 local readbytes = socket.read
+local readlinebytes = socket.readline
 local writebytes = socket.write
+local lwritebytes = socket.lwrite
 
 local sockethelper = {}
 local socket_error = setmetatable({} , { 
@@ -71,6 +73,20 @@ function sockethelper.readfunc(fd, pre)
 	end
 end
 
+function sockethelper.readlinefunc(fd, pre)
+	if pre then
+		return preread(fd, pre)
+	end
+	return function (sep)
+		local ret = readlinebytes(fd, sep)
+		if ret then
+			return ret
+		else
+			error(socket_error("read failed fd = " .. fd))
+		end
+	end
+end
+
 sockethelper.readall = socket.readall
 
 function sockethelper.writefunc(fd)
@@ -78,6 +94,19 @@ function sockethelper.writefunc(fd)
 		local ok = writebytes(fd, content)
 		if not ok then
 			error(socket_error("write failed fd = " .. fd))
+		else
+			return ok
+		end
+	end
+end
+
+function sockethelper.lwritefunc(fd)
+	return function(content)
+		local ok = lwritebytes(fd, content)
+		if not ok then
+			error(socket_error("lwrite failed fd = " .. fd))
+		else
+			return ok
 		end
 	end
 end

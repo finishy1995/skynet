@@ -1,6 +1,7 @@
 local skynet = require "skynet"
 local socket = require "skynet.socket"
 local socketdriver = require "skynet.socketdriver"
+local sockethelper = require "http.sockethelper"
 
 -- channel support auto reconnect , and capture socket error in request/response transaction
 -- { host = "", port = , auth = function(so) , response = function(so) session, data }
@@ -27,6 +28,9 @@ function socket_channel.channel(desc)
 	local c = {
 		__host = assert(desc.host),
 		__port = assert(desc.port),
+		__tls = desc.tls,
+		__tlsClientCert = desc.tlsClientCert,
+		__tlsClientKey = desc.tlsClientKey,
 		__backup = desc.backup,
 		__auth = desc.auth,
 		__response = desc.response,	-- It's for session mode
@@ -46,8 +50,6 @@ function socket_channel.channel(desc)
 	if desc.socket_read or desc.socket_readline then
 		c.__socket_meta = {
 			__index = {
-				read = desc.socket_read or channel_socket.read,
-				readline = desc.socket_readline or channel_socket.readline,
 			},
 			__gc = channel_socket_meta.__gc
 		}
@@ -65,7 +67,15 @@ local function close_channel_socket(self)
 			self.__wait_response = nil
 		end
 		-- never raise error
-		pcall(socket.close,so[1])
+		-- pcall(socket.close,so[1])
+		-- if type(self.__sock) == "table" then
+		-- 	if self.__sock.__close then
+		-- 		self.__sock:close()
+		-- 	end
+		-- end
+		if so then
+			so:close()
+		end
 	end
 end
 
@@ -297,7 +307,6 @@ local function connect_once(self)
 		assert(not self.__sock and not self.__authcoroutine)
 		-- term current dispatch thread (send a signal)
 		term_dispatch_thread(self)
-
 		if self.__nodelay then
 			socketdriver.nodelay(fd)
 		end
@@ -334,6 +343,76 @@ local function connect_once(self)
 		end
 
 		self.__sock = setmetatable( {fd} , self.__socket_meta )
+
+		if self.__tls == true then
+			local tls = require "http.tlshelper"
+
+			local sslctx_client = tls.newctx()
+			sslctx_client:set_client_cert(self.__tlsClientCert, self.__tlsClientKey)
+			local tls_ctx = tls.newtls("client", sslctx_client, self.__host)
+			init = tls.init_requestfunc(fd, tls_ctx)
+			self.__sock.__close = function ()
+				pcall(socket.close,fd)
+				tls.closefunc(tls_ctx)()
+			end
+			self.__sock.__write = tls.writefunc(fd, tls_ctx)
+			self.__sock.__lwrite = tls.lwritefunc(fd, tls_ctx)
+			self.__sock.__read = tls.readfunc(fd, tls_ctx)
+			-- self.__sock.__readline = tls.readlinefunc(fd, tls_ctx)
+
+			function self.__sock:close()
+				self.__close()
+			end
+
+			function self.__sock:write(req)
+				return self.__write(req)
+			end
+
+			function self.__sock:lwrite(req)
+				return self.__lwrite(req)
+			end
+
+			function self.__sock:read(sz)
+				return self.__read(sz)
+			end
+
+			-- function self.__sock:readline(sz)
+			-- 	return self.__sock.readline(sz)
+			-- end
+			-- print("handeshake begin")
+			init()
+			-- print("handeshake finish")
+		else
+			self.__sock.__close = function ()
+				pcall(socket.close,fd)
+			end
+			self.__sock.__write = sockethelper.writefunc(fd)
+			self.__sock.__lwrite = sockethelper.lwritefunc(fd)
+			self.__sock.__read = sockethelper.readfunc(fd)
+			self.__sock.__readline = sockethelper.readlinefunc(fd)
+
+			function self.__sock:close()
+				self.__close()
+			end
+
+			function self.__sock:write(req)
+				return self.__write(req)
+			end
+
+			function self.__sock:lwrite(req)
+				return self.__lwrite(req)
+			end
+
+			function self.__sock:read(sz)
+				return self.__read(sz)
+			end
+
+			function self.__sock:readline(sz)
+				return self.__readline(sz)
+			end
+		end
+
+		-- 建立连接后，调用该分发函数
 		self.__dispatch_thread = skynet.fork(function()
 			if self.__sock then
 				-- self.__sock can be false (socket closed) if error during connecting, See #1513
@@ -381,6 +460,7 @@ end
 local function try_connect(self , once)
 	local t = 0
 	while not self.__closed do
+
 		local ok, err = connect_once(self)
 		if ok then
 			if not once then
@@ -435,7 +515,6 @@ local function block_connect(self, once)
 		return r
 	end
 	local err
-
 	if #self.__connecting > 0 then
 		-- connecting in other coroutine
 		local co = coroutine.running()
@@ -451,7 +530,7 @@ local function block_connect(self, once)
 		end
 		self.__connecting[1] = nil
 	end
-
+	
 	r = check_connection(self)
 	if r == nil then
 		skynet.error(string.format("Connect to %s:%d failed (%s)", self.__host, self.__port, err))
@@ -488,9 +567,6 @@ local function wait_for_response(self, response)
 	end
 end
 
-local socket_write = socket.write
-local socket_lwrite = socket.lwrite
-
 local function sock_err(self)
 	close_channel_socket(self)
 	wakeup_all(self)
@@ -499,23 +575,25 @@ end
 
 function channel:request(request, response, padding)
 	assert(block_connect(self, true))	-- connect once
-	local fd = self.__sock[1]
-
 	if padding then
 		-- padding may be a table, to support multi part request
 		-- multi part request use low priority socket write
-		-- now socket_lwrite returns as socket_write
-		if not socket_lwrite(fd , request) then
-			sock_err(self)
-		end
-		for _,v in ipairs(padding) do
-			if not socket_lwrite(fd, v) then
+		-- now lwrite returns as write
+		if self.__sock.__lwrite then
+			if not self.__sock:lwrite(request) then
 				sock_err(self)
+			end
+			for _,v in ipairs(padding) do
+				if not self.__sock:lwrite(v) then
+					sock_err(self)
+				end
 			end
 		end
 	else
-		if not socket_write(fd , request) then
-			sock_err(self)
+		if self.__sock.__write then
+			if not self.__sock:write(request) then
+				sock_err(self)
+			end
 		end
 	end
 
@@ -567,8 +645,5 @@ local function wrapper_socket_function(f)
 		end
 	end
 end
-
-channel_socket.read = wrapper_socket_function(socket.read)
-channel_socket.readline = wrapper_socket_function(socket.readline)
 
 return socket_channel

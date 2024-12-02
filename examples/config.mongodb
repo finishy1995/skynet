@@ -9,3 +9,4 @@ lualoader = "lualib/loader.lua"
 snax = root.."examples/?.lua;"..root.."test/?.lua"
 cpath = root.."cservice/?.so"
 -- daemon = "./skynet.pid"
+enablessl = true

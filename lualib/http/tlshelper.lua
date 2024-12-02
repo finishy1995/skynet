@@ -1,11 +1,11 @@
-local socket = require "http.sockethelper"
+local sockethelper = require "http.sockethelper"
 local c = require "ltls.c"
 
 local tlshelper = {}
 
 function tlshelper.init_requestfunc(fd, tls_ctx)
-    local readfunc = socket.readfunc(fd)
-    local writefunc = socket.writefunc(fd)
+    local readfunc = sockethelper.readfunc(fd)
+    local writefunc = sockethelper.writefunc(fd)
     return function (hostname)
         tls_ctx:set_ext_host_name(hostname)
         local ds1 = tls_ctx:handshake()
@@ -22,8 +22,8 @@ end
 
 
 function tlshelper.init_responsefunc(fd, tls_ctx)
-    local readfunc = socket.readfunc(fd)
-    local writefunc = socket.writefunc(fd)
+    local readfunc = sockethelper.readfunc(fd)
+    local writefunc = sockethelper.writefunc(fd)
     return function ()
         while not tls_ctx:finished() do
             local ds1 = readfunc()
@@ -45,7 +45,7 @@ end
 
 function tlshelper.readfunc(fd, tls_ctx)
     local function readfunc()
-        readfunc = socket.readfunc(fd)
+        readfunc = sockethelper.readfunc(fd)
         return ""
     end
     local read_buff = ""
@@ -73,16 +73,24 @@ function tlshelper.readfunc(fd, tls_ctx)
 end
 
 function tlshelper.writefunc(fd, tls_ctx)
-    local writefunc = socket.writefunc(fd)
+    local writefunc = sockethelper.writefunc(fd)
     return function (s)
         local ds = tls_ctx:write(s)
         return writefunc(ds)
     end
 end
 
+function tlshelper.lwritefunc(fd, tls_ctx)
+    local lwritefunc = sockethelper.lwritefunc(fd)
+    return function (s)
+        local ds = tls_ctx:write(s)
+        return lwritefunc(ds)
+    end
+end
+
 function tlshelper.readallfunc(fd, tls_ctx)
     return function ()
-        local ds = socket.readall(fd)
+        local ds = sockethelper.readall(fd)
         local s = tls_ctx:read(ds)
         return s
     end
