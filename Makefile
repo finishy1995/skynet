@@ -24,7 +24,8 @@ ifeq ($(PLAT),macosx)
     TLS_LIB=/opt/homebrew/opt/openssl@3/lib
     TLS_INC=/opt/homebrew/opt/openssl@3/include
 else
-    TLS_LIB=/usr/lib/x86_64-linux-gnu
+    # change this if your openssl dev dir is not as following
+    TLS_LIB=/usr/lib64
     TLS_INC=/usr/include/openssl
 endif
 
