@@ -74,6 +74,6 @@ end
 
 skynet.start(function()
 	print("=========== bench start ===========")
-	test_tls_bench()
+	test_tls_query()
 	print("=========== bench finish ===========")
 end)
