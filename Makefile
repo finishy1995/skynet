@@ -20,8 +20,14 @@ $(LUA_STATICLIB) :
 # https : turn on TLS_MODULE to add https support
 
 TLS_MODULE=ltls
-TLS_LIB=/usr/lib/x86_64-linux-gnu
-TLS_INC=/usr/include/openssl
+ifeq ($(PLAT),macosx)
+    TLS_LIB=/opt/homebrew/opt/openssl@3/lib
+    TLS_INC=/opt/homebrew/opt/openssl@3/include
+else
+    # change this if your openssl dev dir is not as following
+    TLS_LIB=/usr/lib64
+    TLS_INC=/usr/include/openssl
+endif
 
 # jemalloc
 
@@ -113,7 +119,7 @@ $(LUA_CLIB_PATH)/sproto.so : lualib-src/sproto/sproto.c lualib-src/sproto/lsprot
 	$(CC) $(CFLAGS) $(SHARED) -Ilualib-src/sproto $^ -o $@ 
 
 $(LUA_CLIB_PATH)/ltls.so : lualib-src/ltls.c | $(LUA_CLIB_PATH)
-	$(CC) $(CFLAGS) $(SHARED) -Iskynet-src -L$(TLS_LIB) -I$(TLS_INC) $^ -o $@ -lssl -lcrypto
+	$(CC) $(CFLAGS) $(SHARED) -Iskynet-src -L$(TLS_LIB) -I$(TLS_INC) -I$(LUA_INC) $^ -o $@ -lssl -lcrypto
 
 $(LUA_CLIB_PATH)/lpeg.so : 3rd/lpeg/lpcap.c 3rd/lpeg/lpcode.c 3rd/lpeg/lpprint.c 3rd/lpeg/lptree.c 3rd/lpeg/lpvm.c 3rd/lpeg/lpcset.c | $(LUA_CLIB_PATH)
 	$(CC) $(CFLAGS) $(SHARED) -I3rd/lpeg $^ -o $@ 

@@ -239,7 +239,18 @@ alignment_cookie_size(size_t alignment) {
 void *
 skynet_memalign(size_t alignment, size_t size) {
 	uint32_t cookie_size = alignment_cookie_size(alignment);
-	void* ptr = je_memalign(alignment, size + cookie_size);
+	void* ptr = NULL;
+
+#if defined(__APPLE__) && defined(__MACH__)
+	// For macOS, use posix_memalign
+	if (posix_memalign(&ptr, alignment, size + cookie_size) != 0) {
+		ptr = NULL; // posix_memalign failed
+	}
+#else
+	// For other platforms, use je_memalign
+	ptr = je_memalign(alignment, size + cookie_size);
+#endif
+
 	if(!ptr) malloc_oom(size);
 	return fill_prefix(ptr, size, cookie_size);
 }
